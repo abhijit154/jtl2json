@@ -1,67 +1,85 @@
 var xpath = require('xpath')
       , dom = require('xmldom').DOMParser
       , fs = require('fs');
+
+var arguments = process.argv.splice(2);
+
+var jtlFileName = 'results.jtl';
+var jsonFileName = 'results.json';
+
+if (arguments && arguments[0]) jtlFileName = arguments[0];  
+if (arguments && arguments[1]) jsonFileName = arguments[1];
+
+console.log(jtlFileName + ' -> ' + jsonFileName)
 	
 //layer0
-fs.readFile(__dirname + '/foo.xml', 'utf-8', function(err, data) {
-	var doc = new dom().parseFromString(data);
-	var nodes = xpath.select("//httpSample", doc);
+fs.readFile(__dirname + '/'+jtlFileName, 'utf-8', parseXml);
 
-	nodes.forEach(function(entry) {
-	    var tmpdoc = new dom().parseFromString(entry.toString());
-	    var raw = xpath.select1("//@lb", tmpdoc).value + ';'  
-	    		+ xpath.select1("//@lt", tmpdoc).value + ';' 
-	    		+ xpath.select1("//@s", tmpdoc).value + ';' 
-	    		+ xpath.select1("//@rc", tmpdoc).value + ';\n';
-    	
-    	fs.appendFileSync('rawdata.csv', raw, 'utf-8',function (err) {
-  			if (err) throw err;
-		});
-	});
-});
+function parseXml(err, data) {
+    if (err) throw err;
+
+    var doc = new dom().parseFromString(data);
+    var nodes = xpath.select("//httpSample", doc);
+
+    nodes.forEach(function(entry) {
+        var tmpdoc = new dom().parseFromString(entry.toString());
+        var raw = '\n' 
+                + xpath.select1("//@lb", tmpdoc).value + ';'  
+                + xpath.select1("//@lt", tmpdoc).value + ';' 
+                + xpath.select1("//@s", tmpdoc).value + ';' 
+                + xpath.select1("//@rc", tmpdoc).value + ';';
+        //ToDo: refactor this to work with stream (after test suite would be implemeted)
+        try {
+            fs.appendFileSync('rawdata.csv', raw, 'utf-8');
+        } catch (err) {
+            throw err;
+        }
+        
+    });
+
+    //ToDo: streaming
+    fs.readFile(__dirname + '/rawdata.csv', 'utf-8', gotFile);
+}
+
 //layer1
-fs.readFile(__dirname + '/rawdata.csv', 'utf-8', gotFile);
-
 function gotFile(err, data) {
     var lines = data.replace().split("\n");
     var res = [];
     //ToDo: refactor hardcode ?
     lines.forEach(function(line){
-        var valArr = line.split(",");
+        var valArr = line.split(";");
+
         var piece = {};
         piece.endpoint = valArr[0];
         piece.latency = valArr[1];
         piece.succesful = valArr[2];
         piece.rc = valArr[3];
-        res.push(piece);       
+
+        if (piece.endpoint && piece.latency) res.push(piece);  
     });
 
     parsedData(null, res);
+
+    //ToDo: REMOVE THIS when moved to streaming
+    try {
+        fs.writeFileSync(__dirname + '/rawdata.csv', '' ,'utf-8')    
+    } catch (err) { 
+        throw err 
+    }
 }
 
 function parsedData(err, parsedData){
-	console.log(JSON.stringify(dataGrouper(parsedData, ["endpoint"]),null,2));
+    try {
+        fs.writeFileSync(__dirname + '/' + jsonFileName, JSON.stringify(dataGrouper(parsedData, ["endpoint"]),null,2), 'utf-8');    
+    } catch (err) {
+        throw err;
+    }
+    
 }
 
 var _ = require('underscore');
 
 var dataGrouper = (function() {
-    var has = function(obj, target) {
-        return _.any(obj, function(value) {
-            return _.isEqual(value, target);
-        });
-    };
-
-    var keys = function(data, names) {
-        return _.reduce(data, function(memo, item) {
-            var key = _.pick(item, names);
-            if (!has(memo, key)) {
-                memo.push(key);
-            }
-            return memo;
-        }, []);
-    };
-
     var group = function(data, names) {
         var stems = keys(data, names);
         return _.map(stems, function(stem) {
@@ -90,6 +108,23 @@ var dataGrouper = (function() {
             };
         });
     };
+
+    var has = function(obj, target) {
+        return _.any(obj, function(value) {
+            return _.isEqual(value, target);
+        });
+    };
+
+    var keys = function(data, names) {
+        return _.reduce(data, function(memo, item) {
+            var key = _.pick(item, names);
+            if (!has(memo, key)) {
+                memo.push(key);
+            }
+            return memo;
+        }, []);
+    };
+
 
 	var max = function(items){
 		return _.reduce(items, function(memo, item) {
