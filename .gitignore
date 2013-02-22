@@ -3,3 +3,5 @@ node_modules/
 #ignoring temporary files
 *.csv
 *.json
+*.xml
+*.jtl

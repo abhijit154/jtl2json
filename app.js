@@ -2,21 +2,25 @@ var xpath = require('xpath')
       , dom = require('xmldom').DOMParser
       , fs = require('fs');
 
-var arguments = process.argv.splice(2);
+var nconf = require('nconf');
 
-var jtlFileName = 'results.jtl';
-var jsonFileName = 'results.json';
+nconf.argv();
 
-if (arguments && arguments[0]) jtlFileName = arguments[0];  
-if (arguments && arguments[1]) jsonFileName = arguments[1];
+if (!(nconf.get('jtl') || nconf.get('csv'))) {
+    throw new Error('No input file. Use --jtl or --csv')
+}
 
-console.log(jtlFileName + ' -> ' + jsonFileName)
+var jsonFileName = nconf.get('json') || 'results.json';
+
+if (nconf.get('csv'))  {
+    fs.readFile(__dirname + '/'+nconf.get('csv'), 'utf-8', gotFile);
+} else {
+    fs.readFile(__dirname + '/'+nconf.get('jtl'), 'utf-8', parseXml);    
+}
 	
 //layer0
-fs.readFile(__dirname + '/'+jtlFileName, 'utf-8', parseXml);
-
 function parseXml(err, data) {
-    if (err) throw err;
+    if (err) throw err; //ToDo
 
     var doc = new dom().parseFromString(data);
     var nodes = xpath.select("//httpSample", doc);
@@ -33,8 +37,7 @@ function parseXml(err, data) {
             fs.appendFileSync('rawdata.csv', raw, 'utf-8');
         } catch (err) {
             throw err;
-        }
-        
+        }  
     });
 
     //ToDo: streaming
@@ -71,18 +74,22 @@ function gotFile(err, data) {
 function parsedData(err, parsedData){
     try {
         fs.writeFileSync(__dirname + '/' + jsonFileName, JSON.stringify(dataGrouper(parsedData, ["endpoint"]),null,2), 'utf-8');    
+
+        if (nconf.get('summary')) {
+            fs.writeFileSync(__dirname + '/' + nconf.get('summary'), JSON.stringify(dataGrouper(parsedData, ["endpoint"], true),null,2), 'utf-8');    
+        }
     } catch (err) {
         throw err;
     }
-    
 }
 
 var _ = require('underscore');
 
 var dataGrouper = (function() {
-    var group = function(data, names) {
+    var group = function(data, names, summaryOnly) {
         var stems = keys(data, names);
-        return _.map(stems, function(stem) {
+       
+        return (typeof summaryOnly == 'undefined' || summaryOnly === false)  ? _.map(stems, function(stem) {
             var vls = _.map(_.where(data, stem), function(item) {
                     return _.omit(item, names);
                 });
@@ -106,6 +113,57 @@ var dataGrouper = (function() {
                 key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
                 vals: vls
             };
+        }) : _.map(stems, function(stem) {
+            var vls = _.map(_.where(data, stem), function(item) {
+                    return _.omit(item, names);
+                });
+            
+            var maxVal = {};
+            maxVal.max = max(vls);
+
+            var minVal = {};
+            minVal.min = min(vls);
+
+            var avgVal = {};
+            avgVal.avg = sum(vls) / vls.length;
+
+            var medianVal = {};
+            medianVal.median = med(vls);
+
+            var errVal = {};
+            errVal.errors = sumErrors(vls) / vls.length; 
+
+            return {
+                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
+            };
+        });
+    };
+
+      var group1 = function(data, names) {
+        var stems = keys(data, names);
+        return _.map(stems, function(stem) {
+            var vls = _.map(_.where(data, stem), function(item) {
+                    return _.omit(item, names);
+                });
+            
+            var maxVal = {};
+            maxVal.max = max(vls);
+
+            var minVal = {};
+            minVal.min = min(vls);
+
+            var avgVal = {};
+            avgVal.avg = sum(vls) / vls.length;
+
+            var medianVal = {};
+            medianVal.median = med(vls);
+
+            var errVal = {};
+            errVal.errors = sumErrors(vls) / vls.length; 
+
+            return {
+                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
+            };
         });
     };
 
@@ -128,15 +186,16 @@ var dataGrouper = (function() {
 
 	var max = function(items){
 		return _.reduce(items, function(memo, item) {
+            //ToDo refactor to _
                 return Math.max(memo, Number(item.latency)); //ToDo: recfactor hardcode 
             }, Number.NEGATIVE_INFINITY);
 	}
 
 	var min = function(items) {
 		return _.reduce(items, function(memo, item) {
+                //ToDo refactor to _
                 return Math.min(memo, Number(item.latency)); //ToDo: recfactor hardcode 
             }, Number.POSITIVE_INFINITY);
-
 	}
 
     var med = function(items) {
@@ -167,3 +226,4 @@ var dataGrouper = (function() {
 
     return group;
 }());
+//layer 3
