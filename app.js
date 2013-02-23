@@ -13,18 +13,20 @@ if (!(nconf.get('jtl') || nconf.get('csv'))) {
 var jsonFileName = nconf.get('json') || 'results.json';
 
 if (nconf.get('csv'))  {
-    fs.readFile(__dirname + '/'+nconf.get('csv'), 'utf-8', gotFile);
+    fs.readFile(__dirname + '/'+nconf.get('csv'), 'utf-8', parseCsv);
 } else {
     fs.readFile(__dirname + '/'+nconf.get('jtl'), 'utf-8', parseXml);    
 }
 	
 //layer0
 function parseXml(err, data) {
-    if (err) throw err; //ToDo
+    if (err) throw err; //ToDo refactor error handling
 
     var doc = new dom().parseFromString(data);
     var nodes = xpath.select("//httpSample", doc);
 
+    //ToDo: refactor this to work with stream (after test suite would be implemeted)
+    fs.writeFileSync('rawdata.csv','label;Latency;success;responseCode','utf-8');
     nodes.forEach(function(entry) {
         var tmpdoc = new dom().parseFromString(entry.toString());
         var raw = '\n' 
@@ -32,7 +34,7 @@ function parseXml(err, data) {
                 + xpath.select1("//@lt", tmpdoc).value + ';' 
                 + xpath.select1("//@s", tmpdoc).value + ';' 
                 + xpath.select1("//@rc", tmpdoc).value + ';';
-        //ToDo: refactor this to work with stream (after test suite would be implemeted)
+
         try {
             fs.appendFileSync('rawdata.csv', raw, 'utf-8');
         } catch (err) {
@@ -40,23 +42,27 @@ function parseXml(err, data) {
         }  
     });
 
-    //ToDo: streaming
-    fs.readFile(__dirname + '/rawdata.csv', 'utf-8', gotFile);
+    fs.readFile(__dirname + '/rawdata.csv', 'utf-8', parseCsv);
 }
 
 //layer1
-function gotFile(err, data) {
+function parseCsv(err, data) {
     var lines = data.replace().split("\n");
+    var schema = lines[0];
+    
+    lines.splice(0,1);
+    schema = schema.split(";");
+
     var res = [];
-    //ToDo: refactor hardcode ?
+
     lines.forEach(function(line){
         var valArr = line.split(";");
 
         var piece = {};
-        piece.endpoint = valArr[0];
-        piece.latency = valArr[1];
-        piece.succesful = valArr[2];
-        piece.rc = valArr[3];
+        piece.endpoint = valArr[schema.indexOf('label')];
+        piece.latency = valArr[schema.indexOf('Latency')];
+        piece.succesful = valArr[schema.indexOf('success')];
+        piece.rc = valArr[schema.indexOf('responseCode')];
 
         if (piece.endpoint && piece.latency) res.push(piece);  
     });
@@ -147,10 +153,10 @@ var dataGrouper = (function() {
                 });
             
             var maxVal = {};
-            maxVal.max = max(vls);
+            maxVal.max = _.max(vls, function(vals){return Number(vals.latency)}).latency;
 
             var minVal = {};
-            minVal.min = min(vls);
+            minVal.min = _.min(vls, function(vals){return Number(vals.latency)}).latency;
 
             var avgVal = {};
             avgVal.avg = sum(vls) / vls.length;
@@ -161,8 +167,11 @@ var dataGrouper = (function() {
             var errVal = {};
             errVal.errors = sumErrors(vls) / vls.length; 
 
+            var samples = {};
+            samples.samples = vls.length;
+
             return {
-                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
+                key: _.extend({}, stem, samples, maxVal, minVal, avgVal, medianVal, errVal),
             };
         });
     };
@@ -183,31 +192,17 @@ var dataGrouper = (function() {
         }, []);
     };
 
-
-	var max = function(items){
-		return _.reduce(items, function(memo, item) {
-            //ToDo refactor to _
-                return Math.max(memo, Number(item.latency)); //ToDo: recfactor hardcode 
-            }, Number.NEGATIVE_INFINITY);
-	}
-
-	var min = function(items) {
-		return _.reduce(items, function(memo, item) {
-                //ToDo refactor to _
-                return Math.min(memo, Number(item.latency)); //ToDo: recfactor hardcode 
-            }, Number.POSITIVE_INFINITY);
-	}
-
+    //median value
     var med = function(items) {
     	items = _.toArray(items);
      	items = _.sortBy(items, function(item) { return Number(item.latency) });
-     	//ToDo: refactor hardcode
+     	//ToDo: refactor hardcoded latency
    		return items.length > 0 ? (items.length & 1) ? Number(items[items.length>>>1].latency) : (Number(items[(items.length>>>1)-1].latency) + Number(items[items.length>>>1].latency))/2  : null;
 	}
 
 	var sum = function(items) {
 		return _.reduce(items, function(memo, item) {
-			//ToDo: refactor hardcode
+			//ToDo: refactor hardcoded latency
 			return memo + Number(item.latency)
 		}, 0);
 	}
