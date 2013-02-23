@@ -125,34 +125,6 @@ var dataGrouper = (function() {
                 });
             
             var maxVal = {};
-            maxVal.max = max(vls);
-
-            var minVal = {};
-            minVal.min = min(vls);
-
-            var avgVal = {};
-            avgVal.avg = sum(vls) / vls.length;
-
-            var medianVal = {};
-            medianVal.median = med(vls);
-
-            var errVal = {};
-            errVal.errors = sumErrors(vls) / vls.length; 
-
-            return {
-                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
-            };
-        });
-    };
-
-      var group1 = function(data, names) {
-        var stems = keys(data, names);
-        return _.map(stems, function(stem) {
-            var vls = _.map(_.where(data, stem), function(item) {
-                    return _.omit(item, names);
-                });
-            
-            var maxVal = {};
             maxVal.max = _.max(vls, function(vals){return Number(vals.latency)}).latency;
 
             var minVal = {};
@@ -167,11 +139,8 @@ var dataGrouper = (function() {
             var errVal = {};
             errVal.errors = sumErrors(vls) / vls.length; 
 
-            var samples = {};
-            samples.samples = vls.length;
-
             return {
-                key: _.extend({}, stem, samples, maxVal, minVal, avgVal, medianVal, errVal),
+                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
             };
         });
     };
