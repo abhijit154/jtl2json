@@ -101,10 +101,10 @@ var dataGrouper = (function() {
                 });
             
             var maxVal = {};
-            maxVal.max = max(vls);
+            maxVal.max = _.max(vls, function(vals){return Number(vals.latency)}).latency;
 
             var minVal = {};
-            minVal.min = min(vls);
+            minVal.min = _.min(vls, function(vals){return Number(vals.latency)}).latency;
 
             var avgVal = {};
             avgVal.avg = sum(vls) / vls.length;
