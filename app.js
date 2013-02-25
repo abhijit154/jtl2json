@@ -66,7 +66,7 @@ function parseCsv(err, data) {
         if (entry.endpoint && entry.latency) parsed.push(entry);  
     });
 
-    aggregateData(null, res);
+    aggregateData(null, parsed);
 }
 
 
