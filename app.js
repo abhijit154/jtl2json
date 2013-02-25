@@ -22,27 +22,25 @@ if (nconf.get('csv'))  {
 function parseXml(err, data) {
     if (err) throw err; //ToDo refactor error handling
 
-    var doc = new dom().parseFromString(data);
-    var nodes = xpath.select("//httpSample", doc);
+    var xmlDoc = new dom().parseFromString(data);
+    var xmlNodes = xpath.select("//httpSample", xmlDoc);
 
-    //ToDo: refactor this to work with stream (after test suite would be implemeted)
-    fs.writeFileSync('rawdata.csv','label;Latency;success;responseCode','utf-8');
-    nodes.forEach(function(entry) {
+    var parsedXml = [];
+
+    xmlNodes.forEach(function(entry) {
         var tmpdoc = new dom().parseFromString(entry.toString());
-        var raw = '\n' 
-                + xpath.select1("//@lb", tmpdoc).value + ';'  
-                + xpath.select1("//@lt", tmpdoc).value + ';' 
-                + xpath.select1("//@s", tmpdoc).value + ';' 
-                + xpath.select1("//@rc", tmpdoc).value + ';';
 
-        try {
-            fs.appendFileSync('rawdata.csv', raw, 'utf-8');
-        } catch (err) {
-            throw err;
-        }  
+        var entry = {};
+        entry.endpoint = xpath.select1("//@lb", tmpdoc).value;
+        entry.latency = xpath.select1("//@lt", tmpdoc).value;
+        entry.succesful = xpath.select1("//@s", tmpdoc).value;
+        entry.rc = xpath.select1("//@rc", tmpdoc).value;
+        entry.ts = xpath.select1("//@ts", tmpdoc).value;
+
+        parsedXml.push(entry);
     });
 
-    fs.readFile(__dirname + '/rawdata.csv', 'utf-8', parseCsv);
+    aggregateData(null, parsedXml);
 }
 
 //layer1
@@ -53,49 +51,63 @@ function parseCsv(err, data) {
     lines.splice(0,1);
     schema = schema.split(";");
 
-    var res = [];
+    var parsed = [];
 
     lines.forEach(function(line){
         var valArr = line.split(";");
 
-        var piece = {};
-        piece.endpoint = valArr[schema.indexOf('label')];
-        piece.latency = valArr[schema.indexOf('Latency')];
-        piece.succesful = valArr[schema.indexOf('success')];
-        piece.rc = valArr[schema.indexOf('responseCode')];
+        var entry = {};
+        entry.endpoint = valArr[schema.indexOf('label')];
+        entry.latency = valArr[schema.indexOf('Latency')];
+        entry.succesful = valArr[schema.indexOf('success')];
+        entry.rc = valArr[schema.indexOf('responseCode')];
+        entry.ts = valArr[schema.indexOf('timeStamp')];
 
-        if (piece.endpoint && piece.latency) res.push(piece);  
+        if (entry.endpoint && entry.latency) parsed.push(entry);  
     });
 
-    parsedData(null, res);
-
-    //ToDo: REMOVE THIS when moved to streaming
-    try {
-        fs.writeFileSync(__dirname + '/rawdata.csv', '' ,'utf-8')    
-    } catch (err) { 
-        throw err 
-    }
+    aggregateData(null, res);
 }
 
-function parsedData(err, parsedData){
-    try {
-        fs.writeFileSync(__dirname + '/' + jsonFileName, JSON.stringify(dataGrouper(parsedData, ["endpoint"]),null,2), 'utf-8');    
 
+var _ = require('underscore');
+
+function aggregateData(err, parsedData){
+    var aggData = dataGrouper(parsedData, ["endpoint"]);
+    var summary = _.map(aggData, function(element){
+        return element.key;
+    });
+    
+    try {
+        fs.writeFileSync(__dirname + '/' + jsonFileName, JSON.stringify(aggData,null,2), 'utf-8');    
+      
         if (nconf.get('summary')) {
-            fs.writeFileSync(__dirname + '/' + nconf.get('summary'), JSON.stringify(dataGrouper(parsedData, ["endpoint"], true),null,2), 'utf-8');    
+            var summaryFileName = nconf.get('summary');
+          
+            fs.writeFileSync(__dirname + '/' + summaryFileName, '<html><table border="1"><tr><td>endpoint</td><td>samples</td><td>min</td><td>max</td><td>avg</td><td>median</td><td>%erros</td></tr>', 'utf-8');
+            summary.forEach(function(item){
+                fs.appendFileSync(__dirname + '/' + summaryFileName, '<tr><td>'.concat(
+                    item.endpoint, '</td><td>',
+                    item.samples, '</td><td>',
+                    item.min, '</td><td>',
+                    item.max, '</td><td>',
+                    Math.round(item.avg*100)/100,'</td><td>',
+                    Math.round(item.median*100)/100 ,'</td><td>',
+                    item.errors,
+                    '</td></tr>'), 'utf-8');
+            });
+            fs.appendFileSync(__dirname + '/' + summaryFileName, '</table></html>', 'utf-8');
         }
     } catch (err) {
         throw err;
     }
 }
 
-var _ = require('underscore');
-
 var dataGrouper = (function() {
     var group = function(data, names, summaryOnly) {
         var stems = keys(data, names);
        
-        return (typeof summaryOnly == 'undefined' || summaryOnly === false)  ? _.map(stems, function(stem) {
+        return _.map(stems, function(stem) {
             var vls = _.map(_.where(data, stem), function(item) {
                     return _.omit(item, names);
                 });
@@ -115,32 +127,12 @@ var dataGrouper = (function() {
             var errVal = {};
             errVal.errors = sumErrors(vls) / vls.length; 
 
+            var sampVal = {};
+            sampVal.samples = vls.length;
+
             return {
-                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
+                key: _.extend({}, stem, sampVal, maxVal, minVal, avgVal, medianVal, errVal),
                 vals: vls
-            };
-        }) : _.map(stems, function(stem) {
-            var vls = _.map(_.where(data, stem), function(item) {
-                    return _.omit(item, names);
-                });
-            
-            var maxVal = {};
-            maxVal.max = _.max(vls, function(vals){return Number(vals.latency)}).latency;
-
-            var minVal = {};
-            minVal.min = _.min(vls, function(vals){return Number(vals.latency)}).latency;
-
-            var avgVal = {};
-            avgVal.avg = sum(vls) / vls.length;
-
-            var medianVal = {};
-            medianVal.median = med(vls);
-
-            var errVal = {};
-            errVal.errors = sumErrors(vls) / vls.length; 
-
-            return {
-                key: _.extend({}, stem, maxVal, minVal, avgVal, medianVal, errVal),
             };
         });
     };
