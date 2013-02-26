@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Untitled Document</title>
+</head>
+<style>
+* {
+	margin:0;
+	padding:0;
+	} 
+body {
+	font:12px normal Arial, Helvetica, sans-serif;
+	margin:0;
+	padding:0;
+	}
+.main {
+	width:960px;
+	margin:0 auto;
+	}
+.row {
+	overflow:hidden;
+	margin:0 0 4px;
+	border-bottom:1px solid #ddd;
+	}
+.row-head {
+	color: #bababa;
+	border-bottom: 1px solid #ddd;
+	box-shadow: 0 2px 2px #efefef;
+	font-weight:bold;
+	}
+	.row-head .cell {
+		line-height:30px;}
+.cell {
+	float:left;
+	width:100px;
+	padding:5px;
+	line-height:24px;
+	}
+.cell.url {
+	width:250px;
+}
+</style>
+
+<body>
+<div class="main">
+    <div class="row row-head">
+        <div class="cell cell-head url">endpoint</div>
+        <div class="cell cell-head">samples</div>
+        <div class="cell cell-head">min</div>
+        <div class="cell cell-head">max</div>
+        <div class="cell cell-head">avg</div>
+        <div class="cell cell-head">med</div>
+        <div class="cell cell-head">%errors</div>
+    </div>
+    {{#samples}}
+    <div class="row">
+        <div class="cell url">{{endpoint}}</div>
+        <div class="cell">{{samples}}</div>
+        <div class="cell">{{min}}</div>
+        <div class="cell">{{max}}</div>
+        <div class="cell">{{avg}}</div>
+        <div class="cell">{{median}}</div>
+        <div class="cell">{{errors}}</div>
+    </div>
+    {{/samples}}
+</div>
+
+</body>
+</html>

@@ -74,29 +74,21 @@ var _ = require('underscore');
 
 function aggregateData(err, parsedData){
     var aggData = dataGrouper(parsedData, ["endpoint"]);
-    var summary = _.map(aggData, function(element){
+    var summary ={ samples : _.map(aggData, function(element){
         return element.key;
-    });
+    })};
     
     try {
-        fs.writeFileSync(__dirname + '/' + jsonFileName, JSON.stringify(aggData,null,2), 'utf-8');    
-      
         if (nconf.get('summary')) {
             var summaryFileName = nconf.get('summary');
           
-            fs.writeFileSync(__dirname + '/' + summaryFileName, '<html><table border="1"><tr><td>endpoint</td><td>samples</td><td>min</td><td>max</td><td>avg</td><td>median</td><td>%erros</td></tr>', 'utf-8');
-            summary.forEach(function(item){
-                fs.appendFileSync(__dirname + '/' + summaryFileName, '<tr><td>'.concat(
-                    item.endpoint, '</td><td>',
-                    item.samples, '</td><td>',
-                    item.min, '</td><td>',
-                    item.max, '</td><td>',
-                    Math.round(item.avg*100)/100,'</td><td>',
-                    Math.round(item.median*100)/100 ,'</td><td>',
-                    item.errors,
-                    '</td></tr>'), 'utf-8');
+            var hogan = require('hogan.js');
+            fs.readFile(__dirname + '/table.hogan', 'utf-8', function(err, data){
+                var tamplate = hogan.compile(data);
+
+                fs.writeFile(__dirname + '/'+nconf.get('summary'), tamplate.render(summary) ,'utf-8');
             });
-            fs.appendFileSync(__dirname + '/' + summaryFileName, '</table></html>', 'utf-8');
+
         }
     } catch (err) {
         throw err;
@@ -119,10 +111,10 @@ var dataGrouper = (function() {
             minVal.min = _.min(vls, function(vals){return Number(vals.latency)}).latency;
 
             var avgVal = {};
-            avgVal.avg = sum(vls) / vls.length;
+            avgVal.avg = Math.round(sum(vls) / vls.length * 100)/100;
 
             var medianVal = {};
-            medianVal.median = med(vls);
+            medianVal.median = Math.round(med(vls)*100)/100;
 
             var errVal = {};
             errVal.errors = sumErrors(vls) / vls.length; 
